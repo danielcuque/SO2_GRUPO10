@@ -1,11 +1,19 @@
-global target_pid1, target_pid2
+#!/usr/bin/stap
 
-probe begin {
-    printf("SystemTap script started...\n")
+probe syscall.read {
+    if (pid() == $1 || pid() == $2) {
+        printf("Proceso %d : %s (%s)\n", pid(), name, ctime(gettimeofday_s()))
+    }
 }
 
-probe syscall.* {
-    if (pid() == target_pid1 || pid() == target_pid2) {
+probe syscall.write {
+    if (pid() == $1 || pid() == $2) {
+        printf("Proceso %d : %s (%s)\n", pid(), name, ctime(gettimeofday_s()))
+    }
+}
+
+probe syscall.open {
+    if (pid() == $1 || pid() == $2) {
         printf("Proceso %d : %s (%s)\n", pid(), name, ctime(gettimeofday_s()))
     }
 }

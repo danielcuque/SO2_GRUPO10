@@ -6,6 +6,7 @@
 #include <string.h>
 
 #define FILENAME "syscalls.log"
+#define STAP_SCRIPT_FILE "monitor_syscalls.stp"
 
 void sigint_handler(int signum) {
     FILE *log_file = fopen(FILENAME, "r");
@@ -36,6 +37,8 @@ void sigint_handler(int signum) {
 int main() {
     signal(SIGINT, sigint_handler);
 
+    pid_t parent_pid = getpid();
+
     FILE *log_file = fopen(FILENAME, "w");
     if (log_file == NULL) {
         perror("Error opening syscalls.log");
@@ -56,6 +59,16 @@ int main() {
         perror("Failed to execute child process");
         exit(EXIT_FAILURE);
     }
+
+    char command[256];
+    sprintf(command, "stap %s %d %d > %s &", STAP_SCRIPT_FILE, pid1, pid2, FILENAME);
+    system(command);
+
+    printf("Parent PID: %d\n", parent_pid);
+    printf("Child 1 PID: %d\n", pid1);
+    printf("Child 2 PID: %d\n", pid2);
+    printf("Parent waiting for children to finish...\n");
+    printf("Press Ctrl+C to get statistics\n");
 
     wait(NULL);
     wait(NULL);

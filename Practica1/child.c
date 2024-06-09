@@ -37,18 +37,18 @@ void child_process() {
         case 0: 
             close(fd); 
             fd = open(FILENAME, O_WRONLY | O_CREAT | O_TRUNC, 0644); 
-            printf("File opened\n");
+            // printf("File opened\n");
             break;
         case 1: 
             random_string(buffer, sizeof(buffer)); 
             write(fd, buffer, sizeof(buffer) - 1); 
-            printf("String written: %s\n", buffer);
+            // printf("String written: %s\n", buffer);
             break;
         case 2: 
             lseek(fd, 0, SEEK_SET); 
             read(fd, buffer, sizeof(buffer) - 1); 
             buffer[sizeof(buffer) - 1] = '\0'; 
-            printf("String read: %s\n", buffer);
+            // printf("String read: %s\n", buffer);
             break;
         }
         sleep(rand() % 3 + 1); 
