@@ -15,4 +15,4 @@
 
 ### Indice
 
-- [Práctica 1](./practica1/README.md)
+- [Práctica 1](./Practica1/README.md)
