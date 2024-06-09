@@ -1,0 +1,11 @@
+global target_pid1, target_pid2
+
+probe begin {
+    printf("SystemTap script started...\n")
+}
+
+probe syscall.* {
+    if (pid() == target_pid1 || pid() == target_pid2) {
+        printf("Proceso %d : %s (%s)\n", pid(), name, ctime(gettimeofday_s()))
+    }
+}
