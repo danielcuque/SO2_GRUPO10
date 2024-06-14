@@ -44,6 +44,7 @@ typedef struct {
     MySemaphore *semaphore;
     int thread_id;
     int num_elements;
+    int processed_records;
 } ThreadArgs;
 
 // Función que procesa una porción del JSON
@@ -55,6 +56,7 @@ void* process_json(void* args) {
     MySemaphore *semaphore = thread_args->semaphore;
     int thread_id = thread_args->thread_id;
     int num_elements = thread_args->num_elements;
+    int *processed_records = &(thread_args->processed_records);
 
     cJSON *element;
 
@@ -70,9 +72,11 @@ void* process_json(void* args) {
                 pthread_mutex_unlock(&semaphore->mutex); // Liberar el mutex
                 cJSON_ArrayForEach(element, json) {
                     if (i == 0) {
+                        // TODO: save account in memory
                         printf("Thread %d - No. Cuenta: %d\n", thread_id, cJSON_GetObjectItemCaseSensitive(element, "no_cuenta")->valueint);
-                        printf("Thread %d - Nombre: %s\n", thread_id, cJSON_GetObjectItemCaseSensitive(element, "nombre")->valuestring);
-                        printf("Thread %d - Saldo: %.2f\n\n", thread_id, cJSON_GetObjectItemCaseSensitive(element, "saldo")->valuedouble);
+                        //printf("Thread %d - Nombre: %s\n", thread_id, cJSON_GetObjectItemCaseSensitive(element, "nombre")->valuestring);
+                        //printf("Thread %d - Saldo: %.2f\n\n", thread_id, cJSON_GetObjectItemCaseSensitive(element, "saldo")->valuedouble);
+                        (*processed_records)++;
                         break;
                     }
                     i--;
@@ -157,6 +161,7 @@ int main() {
         thread_args[i].semaphore = &semaphore;
         thread_args[i].thread_id = i + 1;
         thread_args[i].num_elements = num_elements;
+        thread_args[i].processed_records = 0;
         if (pthread_create(&threads[i], NULL, process_json, &thread_args[i]) != 0) {
             perror("Failed to create thread");
             return 1;
@@ -166,6 +171,7 @@ int main() {
     // Esperar a que los hilos terminen
     for (i = 0; i < NUM_THREADS; i++) {
         pthread_join(threads[i], NULL);
+        printf("Thread %d: Procesados %d registros.\n", thread_args[i].thread_id, thread_args[i].processed_records);
     }
 
     // Liberar la memoria y destruir el semáforo
