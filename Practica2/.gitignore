@@ -1,2 +1,6 @@
 *.bin
 program
+carga_*
+operaciones_*
+transacciones_*
+cuentas.json
