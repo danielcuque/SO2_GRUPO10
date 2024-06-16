@@ -1,10 +1,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include <string.h>
+#include <time.h>
 #include "cJSON.h"
 #include <unistd.h> // Para la función sleep
 
-#define NUM_THREADS 3
+#define NUM_THREADS 4
+
+typedef struct {
+    int no_cuenta;
+    char nombre[100];
+    double saldo;
+    pthread_mutex_t mutex;
+} Cuenta;
 
 typedef struct {
     int value;
@@ -12,14 +21,24 @@ typedef struct {
     pthread_cond_t condition;
 } MySemaphore;
 
-// Inicializar el semáforo
+typedef struct {
+    cJSON *json;
+    MySemaphore *semaphore;
+    int thread_id;
+    int num_elements;
+    int processed_records;
+} ThreadArgs;
+
+Cuenta *cuentas;
+int num_cuentas = 0;
+pthread_mutex_t cuentas_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 void init_semaphore(MySemaphore *semaphore, int value) {
     semaphore->value = value;
     pthread_mutex_init(&semaphore->mutex, NULL);
     pthread_cond_init(&semaphore->condition, NULL);
 }
 
-// Decrementar el semáforo (esperar)
 void wait_semaphore(MySemaphore *semaphore) {
     pthread_mutex_lock(&semaphore->mutex);
     while (semaphore->value <= 0) {
@@ -29,7 +48,6 @@ void wait_semaphore(MySemaphore *semaphore) {
     pthread_mutex_unlock(&semaphore->mutex);
 }
 
-// Incrementar el semáforo (señalizar)
 void signal_semaphore(MySemaphore *semaphore) {
     pthread_mutex_lock(&semaphore->mutex);
     semaphore->value++;
@@ -37,22 +55,82 @@ void signal_semaphore(MySemaphore *semaphore) {
     pthread_mutex_unlock(&semaphore->mutex);
 }
 
-// Estructura para pasar argumentos a los hilos
-typedef struct {
-    cJSON *json;
-    int *verified_elements;
-    MySemaphore *semaphore;
-    int thread_id;
-    int num_elements;
-    int processed_records;
-} ThreadArgs;
+int buscar_cuenta(int no_cuenta) {
+    for (int i = 0; i < num_cuentas; i++) {
+        if (cuentas[i].no_cuenta == no_cuenta) {
+            return i;
+        }
+    }
+    return -1;
+}
 
-// Función que procesa una porción del JSON
-void* process_json(void* args) {
-    ThreadArgs *thread_args = (ThreadArgs*)args;
+int deposito(int no_cuenta, double monto) {
+    pthread_mutex_lock(&cuentas_mutex);
+    int idx = buscar_cuenta(no_cuenta);
+    if (idx == -1) {
+        pthread_mutex_unlock(&cuentas_mutex);
+        return -1;
+    }
+    pthread_mutex_lock(&cuentas[idx].mutex);
+    pthread_mutex_unlock(&cuentas_mutex);
 
+    if (monto < 0) {
+        pthread_mutex_unlock(&cuentas[idx].mutex);
+        return -2;
+    }
+
+    cuentas[idx].saldo += monto;
+    pthread_mutex_unlock(&cuentas[idx].mutex);
+    return 0;
+}
+
+int retiro(int no_cuenta, double monto) {
+    pthread_mutex_lock(&cuentas_mutex);
+    int idx = buscar_cuenta(no_cuenta);
+    if (idx == -1) {
+        pthread_mutex_unlock(&cuentas_mutex);
+        return -1;
+    }
+    pthread_mutex_lock(&cuentas[idx].mutex);
+    pthread_mutex_unlock(&cuentas_mutex);
+
+    if (monto < 0 || cuentas[idx].saldo < monto) {
+        pthread_mutex_unlock(&cuentas[idx].mutex);
+        return -2;
+    }
+
+    cuentas[idx].saldo -= monto;
+    pthread_mutex_unlock(&cuentas[idx].mutex);
+    return 0;
+}
+
+int transferencia(int cuenta_origen, int cuenta_destino, double monto) {
+    if (retiro(cuenta_origen, monto) == 0) {
+        if (deposito(cuenta_destino, monto) == 0) {
+            return 0;
+        } else {
+            deposito(cuenta_origen, monto); // Rollback
+        }
+    }
+    return -1;
+}
+
+void consultar_cuenta(int no_cuenta) {
+    pthread_mutex_lock(&cuentas_mutex);
+    int idx = buscar_cuenta(no_cuenta);
+    if (idx != -1) {
+        pthread_mutex_lock(&cuentas[idx].mutex);
+        printf("Cuenta: %d\nNombre: %s\nSaldo: %.2f\n", cuentas[idx].no_cuenta, cuentas[idx].nombre, cuentas[idx].saldo);
+        pthread_mutex_unlock(&cuentas[idx].mutex);
+    } else {
+        printf("Cuenta no encontrada.\n");
+    }
+    pthread_mutex_unlock(&cuentas_mutex);
+}
+
+void *process_json(void *args) {
+    ThreadArgs *thread_args = (ThreadArgs *)args;
     cJSON *json = thread_args->json;
-    int *verified_elements = thread_args->verified_elements;
     MySemaphore *semaphore = thread_args->semaphore;
     int thread_id = thread_args->thread_id;
     int num_elements = thread_args->num_elements;
@@ -65,24 +143,29 @@ void* process_json(void* args) {
 
         pthread_mutex_lock(&semaphore->mutex); // Bloquear el mutex para acceder a la lista de elementos verificados
 
-        int i;
-        for (i = 0; i < num_elements; i++) {
-            if (!verified_elements[i]) {
-                verified_elements[i] = 1; // Marcar el elemento como verificado
-                pthread_mutex_unlock(&semaphore->mutex); // Liberar el mutex
-                cJSON_ArrayForEach(element, json) {
-                    if (i == 0) {
-                        // TODO: save account in memory
-                        printf("Thread %d - No. Cuenta: %d\n", thread_id, cJSON_GetObjectItemCaseSensitive(element, "no_cuenta")->valueint);
-                        //printf("Thread %d - Nombre: %s\n", thread_id, cJSON_GetObjectItemCaseSensitive(element, "nombre")->valuestring);
-                        //printf("Thread %d - Saldo: %.2f\n\n", thread_id, cJSON_GetObjectItemCaseSensitive(element, "saldo")->valuedouble);
-                        (*processed_records)++;
-                        break;
-                    }
-                    i--;
-                }
-                pthread_mutex_lock(&semaphore->mutex); // Bloquear el mutex antes de modificar la lista de elementos verificados
-                break;
+        cJSON_ArrayForEach(element, json) {
+            int operacion = cJSON_GetObjectItemCaseSensitive(element, "operacion")->valueint;
+            int cuenta1 = cJSON_GetObjectItemCaseSensitive(element, "cuenta1")->valueint;
+            int cuenta2 = cJSON_GetObjectItemCaseSensitive(element, "cuenta2") ? cJSON_GetObjectItemCaseSensitive(element, "cuenta2")->valueint : -1;
+            double monto = cJSON_GetObjectItemCaseSensitive(element, "monto")->valuedouble;
+
+            int resultado = -1;
+            switch (operacion) {
+                case 1:
+                    resultado = deposito(cuenta1, monto);
+                    break;
+                case 2:
+                    resultado = retiro(cuenta1, monto);
+                    break;
+                case 3:
+                    resultado = transferencia(cuenta1, cuenta2, monto);
+                    break;
+            }
+
+            if (resultado == 0) {
+                (*processed_records)++;
+            } else {
+                // Manejo de errores (agregar a un reporte, etc.)
             }
         }
 
@@ -91,14 +174,7 @@ void* process_json(void* args) {
         signal_semaphore(semaphore); // Incrementar el semáforo para indicar que se liberó un elemento
 
         // Salir del bucle si todos los elementos han sido verificados
-        int all_verified = 1;
-        for (i = 0; i < num_elements; i++) {
-            if (!verified_elements[i]) {
-                all_verified = 0;
-                break;
-            }
-        }
-        if (all_verified) {
+        if (*processed_records >= num_elements) {
             break;
         }
     }
@@ -106,12 +182,12 @@ void* process_json(void* args) {
     pthread_exit(NULL);
 }
 
-int main() {
+void cargar_operaciones(const char *filename) {
     // Abrir el archivo JSON
-    FILE *file = fopen("usuarios.json", "r");
+    FILE *file = fopen(filename, "r");
     if (!file) {
         fprintf(stderr, "No se pudo abrir el archivo.\n");
-        return 1;
+        return;
     }
 
     // Obtener el tamaño del archivo
@@ -132,20 +208,17 @@ int main() {
     if (!json) {
         fprintf(stderr, "Error al analizar el JSON.\n");
         free(json_content);
-        return 1;
+        return;
     }
 
     // Check if it's a valid JSON array
-    if(!cJSON_IsArray(json)){
+    if (!cJSON_IsArray(json)) {
         perror("JSON is not Array");
-        return 1;
+        return;
     }
 
     // Contar el número de elementos en el arreglo
     int num_elements = cJSON_GetArraySize(json);
-
-    // Inicializar la lista de elementos verificados
-    int *verified_elements = (int *)calloc(num_elements, sizeof(int));
 
     // Inicializar el semáforo
     MySemaphore semaphore;
@@ -157,14 +230,13 @@ int main() {
     int i;
     for (i = 0; i < NUM_THREADS; i++) {
         thread_args[i].json = json;
-        thread_args[i].verified_elements = verified_elements;
         thread_args[i].semaphore = &semaphore;
         thread_args[i].thread_id = i + 1;
         thread_args[i].num_elements = num_elements;
         thread_args[i].processed_records = 0;
         if (pthread_create(&threads[i], NULL, process_json, &thread_args[i]) != 0) {
             perror("Failed to create thread");
-            return 1;
+            return;
         }
     }
 
@@ -177,9 +249,133 @@ int main() {
     // Liberar la memoria y destruir el semáforo
     cJSON_Delete(json);
     free(json_content);
-    free(verified_elements);
     pthread_mutex_destroy(&semaphore.mutex);
     pthread_cond_destroy(&semaphore.condition);
+}
+
+void generar_reporte_cuentas(const char *filename) {
+    cJSON *reporte_json = cJSON_CreateArray();
+    pthread_mutex_lock(&cuentas_mutex);
+    for (int i = 0; i < num_cuentas; i++) {
+        cJSON *cuenta_json = cJSON_CreateObject();
+        pthread_mutex_lock(&cuentas[i].mutex);
+        cJSON_AddNumberToObject(cuenta_json, "no_cuenta", cuentas[i].no_cuenta);
+        cJSON_AddStringToObject(cuenta_json, "nombre", cuentas[i].nombre);
+        cJSON_AddNumberToObject(cuenta_json, "saldo", cuentas[i].saldo);
+        pthread_mutex_unlock(&cuentas[i].mutex);
+        cJSON_AddItemToArray(reporte_json, cuenta_json);
+    }
+    pthread_mutex_unlock(&cuentas_mutex);
+
+    char *reporte_string = cJSON_Print(reporte_json);
+    FILE *file = fopen(filename, "w");
+    if (file) {
+        fprintf(file, "%s", reporte_string);
+        fclose(file);
+    }
+
+    free(reporte_string);
+    cJSON_Delete(reporte_json);
+}
+
+void menu() {
+    int opcion;
+    while (1) {
+        printf("Menu:\n1. Deposito\n2. Retiro\n3. Transferencia\n4. Consultar cuenta\n5. Cargar operaciones\n6. Generar reporte\n7. Salir\n");
+        scanf("%d", &opcion);
+
+        int no_cuenta, cuenta_origen, cuenta_destino;
+        double monto;
+        char filename[100];
+
+        switch (opcion) {
+            case 1:
+                printf("Numero de cuenta: ");
+                scanf("%d", &no_cuenta);
+                printf("Monto a depositar: ");
+                scanf("%lf", &monto);
+                if (deposito(no_cuenta, monto) == 0) {
+                    printf("Deposito exitoso.\n");
+                } else {
+                    printf("Error en el deposito.\n");
+                }
+                break;
+            case 2:
+                printf("Numero de cuenta: ");
+                scanf("%d", &no_cuenta);
+                printf("Monto a retirar: ");
+                scanf("%lf", &monto);
+                if (retiro(no_cuenta, monto) == 0) {
+                    printf("Retiro exitoso.\n");
+                } else {
+                    printf("Error en el retiro.\n");
+                }
+                break;
+            case 3:
+                printf("Numero de cuenta origen: ");
+                scanf("%d", &cuenta_origen);
+                printf("Numero de cuenta destino: ");
+                scanf("%d", &cuenta_destino);
+                printf("Monto a transferir: ");
+                scanf("%lf", &monto);
+                if (transferencia(cuenta_origen, cuenta_destino, monto) == 0) {
+                    printf("Transferencia exitosa.\n");
+                } else {
+                    printf("Error en la transferencia.\n");
+                }
+                break;
+            case 4:
+                printf("Numero de cuenta: ");
+                scanf("%d", &no_cuenta);
+                consultar_cuenta(no_cuenta);
+                break;
+            case 5:
+                printf("Nombre del archivo de operaciones: ");
+                scanf("%s", filename);
+                cargar_operaciones(filename);
+                break;
+            case 6:
+                printf("Nombre del archivo de reporte: ");
+                scanf("%s", filename);
+                generar_reporte_cuentas(filename);
+                break;
+            case 7:
+                exit(0);
+            default:
+                printf("Opcion no valida.\n");
+        }
+    }
+}
+
+int main() {
+    // Inicialización de cuentas (por simplicidad se crean algunas cuentas de ejemplo)
+    num_cuentas = 3;
+    cuentas = (Cuenta *)malloc(num_cuentas * sizeof(Cuenta));
+
+    cuentas[0].no_cuenta = 123;
+    strcpy(cuentas[0].nombre, "Juan Perez");
+    cuentas[0].saldo = 1000.0;
+    pthread_mutex_init(&cuentas[0].mutex, NULL);
+
+    cuentas[1].no_cuenta = 456;
+    strcpy(cuentas[1].nombre, "Maria Gomez");
+    cuentas[1].saldo = 2000.0;
+    pthread_mutex_init(&cuentas[1].mutex, NULL);
+
+    cuentas[2].no_cuenta = 789;
+    strcpy(cuentas[2].nombre, "Carlos Ruiz");
+    cuentas[2].saldo = 1500.0;
+    pthread_mutex_init(&cuentas[2].mutex, NULL);
+
+    // Ejecutar el menú
+    menu();
+
+    // Liberar recursos
+    for (int i = 0; i < num_cuentas; i++) {
+        pthread_mutex_destroy(&cuentas[i].mutex);
+    }
+    free(cuentas);
+    pthread_mutex_destroy(&cuentas_mutex);
 
     return 0;
 }
