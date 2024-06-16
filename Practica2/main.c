@@ -81,21 +81,32 @@ void generar_archivo(const char *filename, const char *content) {
 }
 
 
-void reporte_usuarios() {
+void reporte_usuarios(ThreadArgs *thread_args) {
     char nombre_archivo[100];
 
     char *fecha = obtener_fecha_formateada();
     snprintf(nombre_archivo, sizeof(nombre_archivo),
              "carga_%s.log", fecha);
 
-    char content[1024];
-    snprintf(content, sizeof(content),
-             "---------- Carga de usuarios ----------\n"
-             "Fecha: %s\n\n"
-             "Usuarios cargados:\n\n",
-             fecha);
+    // Generar el cuerpo del reporte
+    char body[1024];
+    int total_records = 0;
+    snprintf(body, sizeof(body), "---------- Carga de usuarios ----------\n");
+    snprintf(body + strlen(body), sizeof(body) - strlen(body), "Fecha: %s\n\n", fecha);
+    snprintf(body + strlen(body), sizeof(body) - strlen(body), "Usuarios cargados:\n\n");
+    for (int i = 0; i < NUM_THREADS; i++) {
+        snprintf(body + strlen(body), sizeof(body) - strlen(body), "Hilo %d: %d registros.\n", i, thread_args[i].processed_records);
+        total_records += thread_args[i].processed_records;
+    }
+    // Add total number of records
+    snprintf(body + strlen(body), sizeof(body) - strlen(body), "\nTotal: %d registros.\n\n", total_records);
+    snprintf(body + strlen(body), sizeof(body) - strlen(body), "\nErrores:\n\n");
+
+    // Generar el contenido completo
+    char content[2048];
+    snprintf(content, sizeof(content), "%s", body);
+
     generar_archivo(nombre_archivo, content);
-    free(content);
 }
 
 void *cargar_usuarios_thread(void *args) {
@@ -121,7 +132,6 @@ void *cargar_usuarios_thread(void *args) {
         agregar_cuenta(no_cuenta->valueint, nombre->valuestring, saldo->valuedouble);
         thread_args->processed_records++;
     }
-    reporte_usuarios();
 }
 
 void cargar_usuarios(const char *filename) {
@@ -179,6 +189,8 @@ void cargar_usuarios(const char *filename) {
         pthread_join(threads[i], NULL);
         printf("Thread %d: Procesados %d registros.\n", i, thread_args[i].processed_records);
     }
+
+    reporte_usuarios(thread_args);
 
     // Liberar la memoria y destruir el semáforo
     cJSON_Delete(json);
