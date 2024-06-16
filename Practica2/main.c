@@ -59,6 +59,45 @@ int existe_cuenta(int num) {
     return 0;
 }
 
+char* obtener_fecha_formateada() {
+    static char fecha[20];
+    time_t t = time(NULL);
+    struct tm tm = *localtime(&t);
+    snprintf(fecha, sizeof(fecha), "%04d_%02d_%02d-%02d_%02d_%02d",
+             tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+             tm.tm_hour, tm.tm_min, tm.tm_sec);
+    return fecha;
+}
+
+void generar_archivo(const char *filename, const char *content) {
+    FILE *file = fopen(filename, "w");
+    if (!file) {
+        fprintf(stderr, "No se pudo abrir el archivo.\n");
+        return;
+    }
+
+    fprintf(file, content);
+    fclose(file);
+}
+
+
+void reporte_usuarios() {
+    char nombre_archivo[100];
+
+    char *fecha = obtener_fecha_formateada();
+    snprintf(nombre_archivo, sizeof(nombre_archivo),
+             "carga_%s.log", fecha);
+
+    char content[1024];
+    snprintf(content, sizeof(content),
+             "---------- Carga de usuarios ----------\n"
+             "Fecha: %s\n\n"
+             "Usuarios cargados:\n\n",
+             fecha);
+    generar_archivo(nombre_archivo, content);
+    free(content);
+}
+
 void *cargar_usuarios_thread(void *args) {
     ThreadArgs *thread_args = (ThreadArgs *)args;
     cJSON *json = thread_args->json;
@@ -82,6 +121,7 @@ void *cargar_usuarios_thread(void *args) {
         agregar_cuenta(no_cuenta->valueint, nombre->valuestring, saldo->valuedouble);
         thread_args->processed_records++;
     }
+    reporte_usuarios();
 }
 
 void cargar_usuarios(const char *filename) {
@@ -145,43 +185,6 @@ void cargar_usuarios(const char *filename) {
     free(json_content);
 }
 
-char* obtener_fecha_formateada() {
-    static char fecha[20];
-    time_t t = time(NULL);
-    struct tm tm = *localtime(&t);
-    snprintf(fecha, sizeof(fecha), "%04d_%02d_%02d-%02d_%02d_%02d",
-             tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
-             tm.tm_hour, tm.tm_min, tm.tm_sec);
-    return fecha;
-}
-
-void generar_archivo(const char *filename, const char *content) {
-    FILE *file = fopen(filename, "w");
-    if (!file) {
-        fprintf(stderr, "No se pudo abrir el archivo.\n");
-        return;
-    }
-
-    fprintf(file, content);
-    fclose(file);
-}
-
-void reporte_usuarios() {
-    char nombre_archivo[100];
-
-    char *fecha = obtener_fecha_formateada();
-    snprintf(nombre_archivo, sizeof(nombre_archivo),
-             "reporte_%s.txt", fecha);
-
-    char *content = (char *)malloc(1024);
-    snprintf(contenido, sizeof(contenido),
-             "---------- Carga de usuarios ----------\n"
-             "Fecha: %s\n\n"
-             "Usuarios cargados: %d\n\n"
-             fecha);
-    generar_archivo(nombre_archivo, contenido);
-}
-
 void reporte_operaciones() {
     char nombre_archivo[100];
 
@@ -194,7 +197,7 @@ void reporte_operaciones() {
     int transferencias = 0;
     int total = retiros + depositos + transferencias;
     char *content = (char *)malloc(1024);
-    snprintf(contenido, sizeof(contenido),
+    snprintf(content, sizeof(content),
              "---------- Carga de operaciones ----------\n"
              "Fecha: %s\n\n"
              "Operaciones realizadas:"
@@ -202,8 +205,9 @@ void reporte_operaciones() {
              "Depositos: %d\n"
              "Transferencias: %d\n"
              "Total: %d\n\n"
-             "Operaciones por hilo: \n\n"
+             "Operaciones por hilo: \n\n",
              fecha, retiros, depositos, transferencias, total);
+    generar_archivo(nombre_archivo, content);
 }
 
 void menu() {
@@ -212,9 +216,8 @@ void menu() {
         printf("Seleccione una opción:\n");
         printf("1. Cargar usuarios\n");
         printf("2. Operaciones\n");
-        printf("3. Reporte de usuarios\n");
-        printf("4. Reporte de operaciones\n");
-        printf("5. Salir\n");
+        printf("3. Reporte de operaciones\n");
+        printf("4. Salir\n");
         printf("Opción: ");
         scanf("%d", &option);
         switch (option) {
@@ -229,9 +232,6 @@ void menu() {
             case 3:
                 break;
             case 4:
-                reporte_usuarios();
-                break;
-            case 5:
                 printf("Saliendo...\n");
                 exit(EXIT_SUCCESS);
                 return;
