@@ -95,7 +95,7 @@ void reporte_usuarios() {
              "Usuarios cargados:\n\n",
              fecha);
     generar_archivo(nombre_archivo, content);
-    free(content);
+    // free(content);
 }
 
 void *cargar_usuarios_thread(void *args) {
@@ -111,6 +111,12 @@ void *cargar_usuarios_thread(void *args) {
         }
 
         cJSON *no_cuenta = cJSON_GetObjectItem(element, "no_cuenta");
+
+        if (existe_cuenta(no_cuenta->valueint)) {
+            printf("La cuenta %d ya existe.\n", no_cuenta->valueint);
+            continue;
+        }
+
         cJSON *nombre = cJSON_GetObjectItem(element, "nombre");
         cJSON *saldo = cJSON_GetObjectItem(element, "saldo");
 
@@ -185,6 +191,189 @@ void cargar_usuarios(const char *filename) {
     free(json_content);
 }
 
+void deposito_transaccion(int no_cuenta, double monto) {
+    // Realizar el depósito
+    for (int i = 0; i < num_cuentas; i++) {
+        if (cuentas[i].no_cuenta == no_cuenta) {
+            pthread_mutex_lock(&cuentas[i].mutex);
+            cuentas[i].saldo += monto;
+            pthread_mutex_unlock(&cuentas[i].mutex);
+            break;
+        }
+    }
+}
+
+void deposito_individual(){
+
+    // Obtener el número de cuenta
+    int no_cuenta;
+    printf("Número de cuenta: ");
+    scanf("%d", &no_cuenta);
+
+    // Verificar si la cuenta existe
+    if (!existe_cuenta(no_cuenta)) {
+        printf("La cuenta no existe.\n");
+        return;
+    }
+
+    // Obtener el monto del depósito
+    double monto;
+    printf("Monto a depositar: ");
+    scanf("%lf", &monto);
+
+    // Validar el monto
+    if (monto <= 0) {
+        printf("Monto inválido. El monto debe ser mayor a cero.\n");
+        return;
+    }
+
+    // Realizar el depósito
+    deposito_transaccion(no_cuenta, monto);
+   
+    printf("Depósito realizado con éxito.\n");
+}
+
+int retiro_transaccion(int no_cuenta, double monto) {
+    // Realizar el retiro
+    int retiro_realizado = 0;
+    for (int i = 0; i < num_cuentas; i++) {
+        if (cuentas[i].no_cuenta == no_cuenta) {
+            
+            pthread_mutex_lock(&cuentas[i].mutex);           
+            if (cuentas[i].saldo < monto) {
+                pthread_mutex_unlock(&cuentas[i].mutex);
+                break;
+            } 
+
+            cuentas[i].saldo -= monto;
+            pthread_mutex_unlock(&cuentas[i].mutex);
+            break;
+        }
+    }
+    return retiro_realizado;
+}
+
+
+void retiro_individual() {
+    // Obtener el número de cuenta
+    int no_cuenta;
+    printf("Número de cuenta: ");
+    scanf("%d", &no_cuenta);
+
+    // Verificar si la cuenta existe
+    if (!existe_cuenta(no_cuenta)) {
+        printf("La cuenta no existe.\n");
+        return;
+    }
+
+    // Obtener el monto del retiro
+    double monto;
+    printf("Monto a retirar: ");
+    scanf("%lf", &monto);
+
+    // Validar el monto
+    if (monto <= 0) {
+        printf("Monto inválido. El monto debe ser mayor a cero.\n");
+        return;
+    }
+
+    // Realizar el retiro
+    if (retiro_transaccion(no_cuenta, monto)) {
+        printf("Retiro realizado con éxito.\n");
+    } else {
+        printf("Saldo insuficiente.\n");
+    }
+}
+
+int transferencia_transaccion(int no_cuenta_origen, int no_cuenta_destino, double monto) {
+    // Bloquear las cuentas
+    int cuenta_origen_index = -1;
+    int cuenta_destino_index = -1;
+    for (int i = 0; i < num_cuentas; i++) {
+        if (cuentas[i].no_cuenta == no_cuenta_origen) {
+            cuenta_origen_index = i;
+        }
+        if (cuentas[i].no_cuenta == no_cuenta_destino) {
+            cuenta_destino_index = i;
+        }
+    }
+
+    if (cuenta_origen_index == -1 || cuenta_destino_index == -1) {
+        return 0;
+    }
+
+    pthread_mutex_lock(&cuentas[cuenta_origen_index].mutex);
+    pthread_mutex_lock(&cuentas[cuenta_destino_index].mutex);
+
+    // Realizar la transferencia
+    if (cuentas[cuenta_origen_index].saldo < monto) {
+        pthread_mutex_unlock(&cuentas[cuenta_origen_index].mutex);
+        pthread_mutex_unlock(&cuentas[cuenta_destino_index].mutex);
+        return 0;
+    }
+
+    cuentas[cuenta_origen_index].saldo -= monto;
+    cuentas[cuenta_destino_index].saldo += monto;
+
+    // Desbloquear las cuentas
+    pthread_mutex_unlock(&cuentas[cuenta_origen_index].mutex);
+    pthread_mutex_unlock(&cuentas[cuenta_destino_index].mutex);
+
+    return 1;
+}
+
+void transferencia_individual() {
+    // Obtener el número de cuenta origen
+    int no_cuenta_origen;
+    printf("Número de cuenta origen: ");
+    scanf("%d", &no_cuenta_origen);
+
+    // Verificar si la cuenta origen existe
+    if (!existe_cuenta(no_cuenta_origen)) {
+        printf("La cuenta origen no existe.\n");
+        return;
+    }
+
+    // Obtener el número de cuenta destino
+    int no_cuenta_destino;
+    printf("Número de cuenta destino: ");
+    scanf("%d", &no_cuenta_destino);
+
+    // Verificar si la cuenta destino existe
+    if (!existe_cuenta(no_cuenta_destino)) {
+        printf("La cuenta destino no existe.\n");
+        return;
+    }
+
+    // Obtener el monto de la transferencia
+    double monto;
+    printf("Monto a transferir: ");
+    scanf("%lf", &monto);
+
+    // Validar el monto
+    if (monto <= 0) {
+        printf("Monto inválido. El monto debe ser mayor a cero.\n");
+        return;
+    }
+
+    // Realizar la transferencia
+    if (transferencia_transaccion(no_cuenta_origen, no_cuenta_destino, monto)) {
+        printf("Transferencia realizada con éxito.\n");
+    } else {
+        printf("Saldo insuficiente.\n");
+    }
+}
+
+void mostrar_cuenta(int no_cuenta) {
+    for (int i = 0; i < num_cuentas; i++) {
+        if (cuentas[i].no_cuenta == no_cuenta) {
+            printf("Cuenta %d: %s, Saldo: %.2f\n", cuentas[i].no_cuenta, cuentas[i].nombre, cuentas[i].saldo);
+            return;
+        }
+    }
+    printf("La cuenta no existe.\n");
+}
+
 void reporte_operaciones() {
     char nombre_archivo[100];
 
@@ -215,9 +404,13 @@ void menu() {
     do {
         printf("Seleccione una opción:\n");
         printf("1. Cargar usuarios\n");
-        printf("2. Operaciones\n");
-        printf("3. Reporte de operaciones\n");
-        printf("4. Salir\n");
+        printf("2. Deposito [Individual]\n");
+        printf("3. Retiro [Individual]\n");
+        printf("5. Transferencia [Individual]\n");
+        printf("6. Consultar cuenta\n");
+        printf("7. Carga masiva de operaciones\n");
+        printf("8. Reporte de operaciones masivas\n");
+        printf("9. Salir\n");
         printf("Opción: ");
         scanf("%d", &option);
         switch (option) {
@@ -228,18 +421,31 @@ void menu() {
                 cargar_usuarios(filename);
                 break;
             case 2:
+                deposito_individual();
                 break;
             case 3:
+                retiro_individual();
                 break;
-            case 4:
-                printf("Saliendo...\n");
-                exit(EXIT_SUCCESS);
-                return;
+            case 5:
+                transferencia_individual();
+                break;
+            case 6:
+                int no_cuenta;
+                printf("Número de cuenta: ");
+                scanf("%d", &no_cuenta);
+                mostrar_cuenta(no_cuenta);
+                break;
+            case 7:
+                break;
+            case 8:
+                break;
+            case 9:
+                break;
             default:
                 printf("Opción inválida.\n");
                 break;
         }
-    } while (option != 5);
+    } while (option != 9);
 }
 
 
@@ -259,6 +465,11 @@ int main() {
     }
 
     // Liberar la memoria
+
+    for (int i = 0; i < num_cuentas; i++) {
+        pthread_mutex_destroy(&cuentas[i].mutex);
+    }
+
     free(cuentas);
     pthread_mutex_destroy(&cuentas_mutex);
 
