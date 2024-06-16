@@ -145,16 +145,113 @@ void cargar_usuarios(const char *filename) {
     free(json_content);
 }
 
+char* obtener_fecha_formateada() {
+    static char fecha[20];
+    time_t t = time(NULL);
+    struct tm tm = *localtime(&t);
+    snprintf(fecha, sizeof(fecha), "%04d_%02d_%02d-%02d_%02d_%02d",
+             tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+             tm.tm_hour, tm.tm_min, tm.tm_sec);
+    return fecha;
+}
+
+void generar_archivo(const char *filename, const char *content) {
+    FILE *file = fopen(filename, "w");
+    if (!file) {
+        fprintf(stderr, "No se pudo abrir el archivo.\n");
+        return;
+    }
+
+    fprintf(file, content);
+    fclose(file);
+}
+
+void reporte_usuarios() {
+    char nombre_archivo[100];
+
+    char *fecha = obtener_fecha_formateada();
+    snprintf(nombre_archivo, sizeof(nombre_archivo),
+             "reporte_%s.txt", fecha);
+
+    char *content = (char *)malloc(1024);
+    snprintf(contenido, sizeof(contenido),
+             "---------- Carga de usuarios ----------\n"
+             "Fecha: %s\n\n"
+             "Usuarios cargados: %d\n\n"
+             fecha);
+    generar_archivo(nombre_archivo, contenido);
+}
+
+void reporte_operaciones() {
+    char nombre_archivo[100];
+
+    char *fecha = obtener_fecha_formateada();
+    snprintf(nombre_archivo, sizeof(nombre_archivo),
+             "reporte_operaciones_%s.txt", fecha);
+
+    int retiros = 0;
+    int depositos = 0;
+    int transferencias = 0;
+    int total = retiros + depositos + transferencias;
+    char *content = (char *)malloc(1024);
+    snprintf(contenido, sizeof(contenido),
+             "---------- Carga de operaciones ----------\n"
+             "Fecha: %s\n\n"
+             "Operaciones realizadas:"
+             "Retiros: %d\n"
+             "Depositos: %d\n"
+             "Transferencias: %d\n"
+             "Total: %d\n\n"
+             "Operaciones por hilo: \n\n"
+             fecha, retiros, depositos, transferencias, total);
+}
+
+void menu() {
+    int option;
+    do {
+        printf("Seleccione una opción:\n");
+        printf("1. Cargar usuarios\n");
+        printf("2. Operaciones\n");
+        printf("3. Reporte de usuarios\n");
+        printf("4. Reporte de operaciones\n");
+        printf("5. Salir\n");
+        printf("Opción: ");
+        scanf("%d", &option);
+        switch (option) {
+            case 1:
+                char filename[100];
+                printf("Nombre del archivo de operaciones: ");
+                scanf("%s", filename);
+                cargar_usuarios(filename);
+                break;
+            case 2:
+                break;
+            case 3:
+                break;
+            case 4:
+                reporte_usuarios();
+                break;
+            case 5:
+                printf("Saliendo...\n");
+                exit(EXIT_SUCCESS);
+                return;
+            default:
+                printf("Opción inválida.\n");
+                break;
+        }
+    } while (option != 5);
+}
+
 
 int main() {
 
-    char filename[100];
-    printf("Nombre del archivo de operaciones: ");
-    scanf("%s", filename);
-    cargar_usuarios(filename);
+    // char filename[100];
+    // printf("Nombre del archivo de operaciones: ");
+    // scanf("%s", filename);
+    // cargar_usuarios(filename);
     
     // Ejecutar el menú
-    // menu();
+    menu();
 
     // Imprimir las cuentas
     for (int i = 0; i < num_cuentas; i++) {
