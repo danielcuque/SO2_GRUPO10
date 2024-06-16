@@ -109,6 +109,29 @@ void reporte_usuarios(ThreadArgs *thread_args) {
     generar_archivo(nombre_archivo, content);
 }
 
+void reporte_operaciones() {
+    char nombre_archivo[100];
+
+    char *fecha = obtener_fecha_formateada();
+    snprintf(nombre_archivo, sizeof(nombre_archivo),
+             "operaciones_%s.log", fecha);
+
+    int retiros = 0;
+    int depositos = 0;
+    int transferencias = 0;
+    int total = retiros + depositos + transferencias;
+    char body[1024];
+    snprintf(body, sizeof(body), "---------- Resumen de operaciones ----------\n");
+    snprintf(body + strlen(body), sizeof(body) - strlen(body), "Fecha: %s\n\n", fecha);
+    snprintf(body + strlen(body), sizeof(body) - strlen(body), "Operaciones realizadas:"
+             "Retiros: %d\n"
+             "Depositos: %d\n"
+             "Transferencias: %d\n"
+             "Total: %d\n\n",
+             retiros, depositos, transferencias, total);
+    generar_archivo(nombre_archivo, body);
+}
+
 void *cargar_usuarios_thread(void *args) {
     ThreadArgs *thread_args = (ThreadArgs *)args;
     cJSON *json = thread_args->json;
@@ -197,31 +220,6 @@ void cargar_usuarios(const char *filename) {
     free(json_content);
 }
 
-void reporte_operaciones() {
-    char nombre_archivo[100];
-
-    char *fecha = obtener_fecha_formateada();
-    snprintf(nombre_archivo, sizeof(nombre_archivo),
-             "reporte_operaciones_%s.txt", fecha);
-
-    int retiros = 0;
-    int depositos = 0;
-    int transferencias = 0;
-    int total = retiros + depositos + transferencias;
-    char *content = (char *)malloc(1024);
-    snprintf(content, sizeof(content),
-             "---------- Carga de operaciones ----------\n"
-             "Fecha: %s\n\n"
-             "Operaciones realizadas:"
-             "Retiros: %d\n"
-             "Depositos: %d\n"
-             "Transferencias: %d\n"
-             "Total: %d\n\n"
-             "Operaciones por hilo: \n\n",
-             fecha, retiros, depositos, transferencias, total);
-    generar_archivo(nombre_archivo, content);
-}
-
 void menu() {
     int option;
     do {
@@ -242,6 +240,7 @@ void menu() {
             case 2:
                 break;
             case 3:
+                reporte_operaciones();
                 break;
             case 4:
                 printf("Saliendo...\n");
