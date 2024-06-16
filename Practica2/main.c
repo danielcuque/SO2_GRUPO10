@@ -337,8 +337,7 @@ void menu() {
             case 6:
                 printf("Nombre del archivo de reporte: ");
                 scanf("%s", filename);
-            
-                char filename[100];
+        
                 time_t t = time(NULL);
                 struct tm tm = *localtime(&t);
                 strftime(filename, sizeof(filename), "carga_%Y_%m_%d-%H_%M_%S.log", &tm);
