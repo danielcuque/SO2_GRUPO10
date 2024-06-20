@@ -32,6 +32,16 @@ typedef struct {
 } TransactionThreadArgs;
 
 
+typedef struct {
+    char *message;
+    int line;
+} ReportError;
+
+
+int num_errors = 0;
+ReportError *errores = NULL;
+pthread_mutex_t errores_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 Cuenta *cuentas = NULL;
 int num_cuentas = 0;
 pthread_mutex_t cuentas_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -54,6 +64,31 @@ void agregar_cuenta(int num, const char *nombre, double saldo) {
     }
     inicializar_cuenta(&cuentas[num_cuentas - 1], num, nombre, saldo);
     pthread_mutex_unlock(&cuentas_mutex);
+}
+
+void agregar_error(const char *message, int line) {
+    // return;
+    pthread_mutex_lock(&errores_mutex);
+    num_errors++;
+    errores = (ReportError *)realloc(errores, num_errors * sizeof(ReportError));
+    if (errores == NULL) {
+        perror("Error al asignar memoria para el error");
+        exit(EXIT_FAILURE);
+    }
+    errores[num_errors - 1].message = strdup(message);
+    errores[num_errors - 1].line = line;
+    pthread_mutex_unlock(&errores_mutex);
+}
+
+void clear_errors() {
+    pthread_mutex_lock(&errores_mutex);
+    for (int i = 0; i < num_errors; i++) {
+        free(errores[i].message);
+    }
+    free(errores);
+    errores = NULL;
+    num_errors = 0;
+    pthread_mutex_unlock(&errores_mutex);
 }
 
 int existe_cuenta(int num) {
@@ -95,7 +130,7 @@ void reporte_usuarios(UserThreadArgs *thread_args) {
              "carga_%s.log", fecha);
 
     // Generar el cuerpo del reporte
-    char body[1024];
+    char body[2048*4];
     int total_records = 0;
     snprintf(body, sizeof(body), "---------- Carga de usuarios ----------\n");
     snprintf(body + strlen(body), sizeof(body) - strlen(body), "Fecha: %s\n\n", fecha);
@@ -108,8 +143,12 @@ void reporte_usuarios(UserThreadArgs *thread_args) {
     snprintf(body + strlen(body), sizeof(body) - strlen(body), "\nTotal: %d registros.\n\n", total_records);
     snprintf(body + strlen(body), sizeof(body) - strlen(body), "\nErrores:\n\n");
 
+    for (int i = 0; i < num_errors; i++) {
+        snprintf(body + strlen(body), sizeof(body) - strlen(body), "No. Registro %d: %s\n", errores[i].line, errores[i].message);
+    }
+
     // Generar el contenido completo
-    char content[2048];
+    char content[2048*4];
     snprintf(content, sizeof(content), "%s", body);
 
     generar_archivo(nombre_archivo, content);
@@ -150,9 +189,11 @@ void reporte_transacciones(TransactionThreadArgs *thread_args) {
         snprintf(body + strlen(body), sizeof(body) - strlen(body), "Hilo %d: %d\n", i, thread_args[i].depositos + thread_args[i].retiros + thread_args[i].transferencias);
     }
     snprintf(body + strlen(body), sizeof(body) - strlen(body), "\nErrores:\n\n");   
+    for (int i = 0; i < num_errors; i++) {
+        snprintf(body + strlen(body), sizeof(body) - strlen(body), "No. Operacion %d: %s\n", errores[i].line, errores[i].message);
+    }
     generar_archivo(nombre_archivo, body);
 }
-
 
 void *cargar_usuarios_thread(void *args) {
     UserThreadArgs *thread_args = (UserThreadArgs *)args;
@@ -168,13 +209,32 @@ void *cargar_usuarios_thread(void *args) {
 
         cJSON *no_cuenta = cJSON_GetObjectItem(element, "no_cuenta");
 
+        // El numero de cuenta debe ser un ENTERO POSITIVO
+        if (!no_cuenta || !cJSON_IsNumber(no_cuenta) || no_cuenta->valueint <= 0) {
+            char message[100];
+            snprintf(message, sizeof(message), "El número de cuenta debe ser un entero positivo.");
+            agregar_error(message, i);
+            continue;
+        }
+
         if (existe_cuenta(no_cuenta->valueint)) {
-            printf("La cuenta %d ya existe.\n", no_cuenta->valueint);
+            char message[100];
+            snprintf(message, sizeof(message), "La cuenta %d ya existe.", no_cuenta->valueint);
+            agregar_error(message, i);
             continue;
         }
 
         cJSON *nombre = cJSON_GetObjectItem(element, "nombre");
+        
         cJSON *saldo = cJSON_GetObjectItem(element, "saldo");
+
+        // EL saldo debe ser un número positivo
+        if (!saldo || !cJSON_IsNumber(saldo) || saldo->valuedouble < 0) {
+            char message[100];
+            snprintf(message, sizeof(message), "El saldo debe ser un número positivo.");
+            agregar_error(message, i);
+            continue;
+        }
 
         if (!no_cuenta || !nombre || !saldo) {
             continue;
@@ -219,6 +279,8 @@ void cargar_usuarios(const char *filename) {
         perror("JSON is not Array");
         return;
     }
+
+    clear_errors();
 
     // Contar el número de elementos en el arreglo
     int num_elements = cJSON_GetArraySize(json);
@@ -467,85 +529,128 @@ void *cargar_operaciones_masiva_thread(void *args) {
 
         // TODO: AGREGAR ERRORES
         if (operacion->valueint == 1) {
+
             // Validaciones de depósito
-            if (!cuenta1 || !monto) {
-                printf("Para deposito se necesita cuenta y monto\n");
+            if (!cuenta1 || (!monto && monto != 0)) {
+                char message[100];
+                snprintf(message, sizeof(message), "Para deposito se necesita cuenta y monto");
+                agregar_error(message, current_transaction);
                 pthread_mutex_unlock(&cuentas_mutex);
                 continue;
             }
+
+            // Validar el monto
+            if (monto->valuedouble <= 0) {
+                // fprintf(stderr, "El monto debe ser mayor a cero.\n");
+                char message[100];
+                snprintf(message, sizeof(message), "El monto debe ser mayor a cero.");
+                agregar_error(message, current_transaction);
+                pthread_mutex_unlock(&cuentas_mutex);
+                continue;
+            }       
             
             // existencia de cuenta
             if (!existe_cuenta(cuenta1->valueint)) {
-                fprintf(stderr, "La cuenta %d no existe.\n", cuenta1->valueint);
+                // printf(stderr, "La cuenta %d no existe.\n", cuenta1->valueint);
+                char message[100];
+                snprintf(message, sizeof(message), "La cuenta %d no existe.", cuenta1->valueint);
+                agregar_error(message, current_transaction);
+                pthread_mutex_unlock(&cuentas_mutex);
+                continue;
+            }
+
+            deposito_transaccion(cuenta1->valueint, monto->valuedouble);
+            // fprintf(stderr, "Deposito realizado con exito\n");
+            thread_args->depositos++;
+        } else if (operacion->valueint == 2) {
+
+            // Validaciones de retiro
+            if (!cuenta1 || (!monto && monto != 0)) {
+                // fprintf(stderr, "Para retiro se necesita cuenta y monto\n");
+                char message[100];
+                snprintf(message, sizeof(message), "Para retiro se necesita cuenta y monto.");
+                agregar_error(message, current_transaction);
                 pthread_mutex_unlock(&cuentas_mutex);
                 continue;
             }
 
             // Validar el monto
             if (monto->valuedouble <= 0) {
-                fprintf(stderr, "El monto debe ser mayor a cero.\n");
-                pthread_mutex_unlock(&cuentas_mutex);
-                continue;
-            }           
-
-            deposito_transaccion(cuenta1->valueint, monto->valuedouble);
-            fprintf(stderr, "Deposito realizado con exito\n");
-            thread_args->depositos++;
-        } else if (operacion->valueint == 2) {
-            // Validaciones de retiro
-            if (!cuenta1 || !monto) {
-                fprintf(stderr, "Para retiro se necesita cuenta y monto\n");
+                //fprintf(stderr, "El monto debe ser mayor a cero.\n");
+                char message[100];
+                snprintf(message, sizeof(message), "El monto debe ser mayor a cero.");
+                agregar_error(message, current_transaction);
                 pthread_mutex_unlock(&cuentas_mutex);
                 continue;
             }
 
             // existencia de cuenta
             if (!existe_cuenta(cuenta1->valueint)) {
-                fprintf(stderr, "La cuenta %d no existe.\n", cuenta1->valueint);
-                pthread_mutex_unlock(&cuentas_mutex);
-                continue;
-            }
-
-            // Validar el monto
-            if (monto->valuedouble <= 0) {
-                fprintf(stderr, "El monto debe ser mayor a cero.\n");
+                // fprintf(stderr, "La cuenta %d no existe.\n", cuenta1->valueint);
+                char message[100];
+                snprintf(message, sizeof(message), "La cuenta %d no existe.", cuenta1->valueint);
+                agregar_error(message, current_transaction);
                 pthread_mutex_unlock(&cuentas_mutex);
                 continue;
             }
 
             if (!retiro_transaccion(cuenta1->valueint, monto->valuedouble)){
-                fprintf(stderr, "Saldo insuficiente\n");
+                //fprintf(stderr, "Saldo insuficiente\n");
+                char message[100];
+                snprintf(message, sizeof(message), "Saldo insuficiente en la cuenta %d.", cuenta1->valueint);
+                agregar_error(message, current_transaction);
             } else {
-                fprintf(stderr, "Retiro realizado con exito\n");
+                //fprintf(stderr, "Retiro realizado con exito\n");
                 thread_args->retiros++;
             }
         } else if (operacion->valueint == 3) {
 
             // Validaciones de transferencia
-            if (!cuenta1 || !cuenta2 || !monto) {
-                fprintf(stderr, "Para transferencia se necesita cuenta1, cuenta2 y monto\n");
+            if (!cuenta1 || !cuenta2 || (!monto && monto != 0)) {
+                // fprintf(stderr, "Para transferencia se necesita cuenta1, cuenta2 y monto\n");
+                char message[100];
+                snprintf(message, sizeof(message), "Para transferencia se necesita cuenta1, cuenta2 y monto.");
+                agregar_error(message, current_transaction);
                 pthread_mutex_unlock(&cuentas_mutex);
                 continue;
             }
 
             // existencia de cuenta
-            if (!existe_cuenta(cuenta1->valueint) || !existe_cuenta(cuenta2->valueint)) {
-                fprintf(stderr, "La cuenta %d o %d no existe.\n", cuenta1->valueint, cuenta2->valueint);
+            if (!existe_cuenta(cuenta1->valueint)) {
+                // fprintf(stderr, "La cuenta %d o %d no existe.\n", cuenta1->valueint, cuenta2->valueint);
+                char message[100];
+                snprintf(message, sizeof(message), "La cuenta %d no existe.", cuenta1->valueint);
+                agregar_error(message, current_transaction);
+                pthread_mutex_unlock(&cuentas_mutex);
+                continue;
+            }
+
+            if (!existe_cuenta(cuenta2->valueint)) {
+                // fprintf(stderr, "La cuenta %d o %d no existe.\n", cuenta1->valueint, cuenta2->valueint);
+                char message[100];
+                snprintf(message, sizeof(message), "La cuenta %d no existe.", cuenta2->valueint);
+                agregar_error(message, current_transaction);
                 pthread_mutex_unlock(&cuentas_mutex);
                 continue;
             }
 
             // Validar el monto
             if (monto->valuedouble <= 0) {
-                fprintf(stderr, "El monto debe ser mayor a cero.\n");
+                //fprintf(stderr, "El monto debe ser mayor a cero.\n");
+                char message[100];
+                snprintf(message, sizeof(message), "El monto debe ser mayor a cero.");
+                agregar_error(message, current_transaction);
                 pthread_mutex_unlock(&cuentas_mutex);
                 continue;
             }
 
             if (!transferencia_transaccion(cuenta1->valueint, cuenta2->valueint, monto->valuedouble)){
-                fprintf(stderr, "Saldo insuficiente\n");
+                // fprintf(stderr, "Saldo insuficiente\n");
+                char message[100];
+                snprintf(message, sizeof(message), "Saldo insuficiente en la cuenta %d.", cuenta1->valueint);
+                agregar_error(message, current_transaction);
             } else {
-                fprintf(stderr, "Transferencia realizada con exito\n");
+                // fprintf(stderr, "Transferencia realizada con exito\n");
                 thread_args->transferencias++;
             }
         }
@@ -594,6 +699,8 @@ void cargar_operaciones_masiva(){
         perror("JSON is not Array");
         return;
     }
+
+    clear_errors();
 
     // Vamos a trabajar de forma concurrente con 3 hilos
     pthread_t threads[NUM_THREADS_2];
@@ -717,19 +824,14 @@ int main() {
     // Ejecutar el menú
     menu();
 
-    // Imprimir las cuentas
-    for (int i = 0; i < num_cuentas; i++) {
-        printf("Cuenta %d: %s, Saldo: %.2f\n", cuentas[i].no_cuenta, cuentas[i].nombre, cuentas[i].saldo);
-    }
-
     // Liberar la memoria
-
     for (int i = 0; i < num_cuentas; i++) {
         pthread_mutex_destroy(&cuentas[i].mutex);
     }
 
     free(cuentas);
     pthread_mutex_destroy(&cuentas_mutex);
+    pthread_mutex_destroy(&errores_mutex);
 
     return 0;
 }
