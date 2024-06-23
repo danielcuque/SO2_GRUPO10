@@ -1,0 +1,13 @@
+#!/usr/bin/stap
+
+global count_mmap, count_munmap
+
+probe syscall.mmap2 {
+    printf("1,%d,%s,%d,%d\n", pid(), execname(), gettimeofday_s(), length);
+    count_mmap++;
+}
+
+probe syscall.munmap {
+    printf("0,%d,%s,%d\n", pid(), execname(), gettimeofday_s());
+    count_munmap++;
+}
