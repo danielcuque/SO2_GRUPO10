@@ -46,15 +46,21 @@ int main() {
         char *gettimeofday_s = strtok(NULL, ",");
         char *length = strtok(NULL, ",");
 
-        
+        // only if all exists
+        if(ismmap == NULL || pid == NULL || execname == NULL || gettimeofday_s == NULL || length == NULL){
+            continue;
+        }
+
         long pid_val = atol(pid);  
         long unix_time_val = atol(gettimeofday_s);  
+        long size = atol(length);
+
         int is_mmap_val = atoi(ismmap);  
 
         
         char query[MAX_LINE_LENGTH];
-        sprintf(query, "INSERT INTO memory_requests (pid, process_name, is_mmap, unix_time) VALUES (%ld, '%s', %d, %ld)",
-                pid_val, execname, is_mmap_val, unix_time_val);
+        sprintf(query, "INSERT INTO memory_requests (pid, process_name, is_mmap, unix_time, size) VALUES (%ld, '%s', %d, %ld, %ld)",
+                pid_val, execname, is_mmap_val, unix_time_val, size);
 
         
         if (mysql_query(conn, query)) {
