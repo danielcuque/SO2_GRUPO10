@@ -1,9 +1,5 @@
 {
-<<<<<<< HEAD
   "name": "dashboard",
-=======
-  "name": "app",
->>>>>>> c7fda4c9a985f29edb4cb39adce68c19e5d86e8b
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -13,7 +9,6 @@
     "lint": "next lint"
   },
   "dependencies": {
-<<<<<<< HEAD
     "@nextui-org/react": "^2.4.2",
     "apexcharts": "^3.49.1",
     "framer-motion": "^11.2.11",
@@ -33,20 +28,5 @@
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
     "typescript": "^5"
-=======
-    "react": "^18",
-    "react-dom": "^18",
-    "next": "14.2.4"
-  },
-  "devDependencies": {
-    "typescript": "^5",
-    "@types/node": "^20",
-    "@types/react": "^18",
-    "@types/react-dom": "^18",
-    "postcss": "^8",
-    "tailwindcss": "^3.4.1",
-    "eslint": "^8",
-    "eslint-config-next": "14.2.4"
->>>>>>> c7fda4c9a985f29edb4cb39adce68c19e5d86e8b
   }
 }
