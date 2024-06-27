@@ -50,7 +50,7 @@ int main() {
     }
 
     // Get the total virtual memory with free -t and insert it into the database
-    const char *command2 = "free -t | grep Swap | awk '{print $2}'";
+    const char *command2 = "free -t | grep Inter | awk '{print $2}'";
     FILE *fp2 = popen(command2, "r");
     if (fp2 == NULL) {
         perror("Error abriendo el proceso con free");
