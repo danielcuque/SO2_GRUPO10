@@ -44,7 +44,7 @@ export async function getLast(page: number) : Promise<{items: AllocInfo[], pages
     FROM memory_requests;
     `;
     const [rows2] = await connection.query(query2) as any;
-    const total = Number(rows2[0]['total']);
+    const total = Number(rows2[0]?.['total'] || 0);
     const pages = Math.ceil(total / 15);
 
     return {items: formatedData, pages, page};

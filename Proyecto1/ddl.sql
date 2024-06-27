@@ -9,3 +9,10 @@ create table memory_requests(
     is_mmap bool,
     unix_time bigint
 );
+
+
+create table virtual_memory(
+    id bigint primary key auto_increment,
+    process_at timestamp default current_timestamp,
+    amount bigint,
+);

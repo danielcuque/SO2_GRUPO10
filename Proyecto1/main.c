@@ -36,6 +36,42 @@ int main() {
         return 1;
     }
 
+    // Erase all the records in the tables
+    if (mysql_query(conn, "DELETE FROM memory_requests")) {
+        fprintf(stderr, "Error al ejecutar la consulta: %s\n", mysql_error(conn));
+    }else{
+        printf("Se eliminaron correctamente los registros\n");
+    }
+
+    if (mysql_query(conn, "DELETE FROM virtual_memory")) {
+        fprintf(stderr, "Error al ejecutar la consulta: %s\n", mysql_error(conn));
+    }else{
+        printf("Se eliminaron correctamente los registros\n");
+    }
+
+    // Get the total virtual memory with free -t and insert it into the database
+    const char *command2 = "free -t | grep Swap | awk '{print $2}'";
+    FILE *fp2 = popen(command2, "r");
+    if (fp2 == NULL) {
+        perror("Error abriendo el proceso con free");
+        return 1;
+    }
+
+    char line2[MAX_LINE_LENGTH];
+    fgets(line2, sizeof(line2), fp2);
+    long total_virtual_memory = atol(line2);
+
+    char query2[MAX_LINE_LENGTH];
+    sprintf(query2, "INSERT INTO virtual_memory (amount) VALUES (%ld)", total_virtual_memory);
+
+    if (mysql_query(conn, query2)) {
+        fprintf(stderr, "Error al ejecutar la consulta: %s\n", mysql_error(conn));
+    }else{
+        printf("Se insertó correctamente el registro\n");
+    }
+    pclose(fp2);
+
+
     char line[MAX_LINE_LENGTH];
 
     while (fgets(line, sizeof(line), fp) != NULL) {

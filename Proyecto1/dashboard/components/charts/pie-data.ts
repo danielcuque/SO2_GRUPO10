@@ -41,13 +41,13 @@ export async function fetchPieData() {
     const [rows] = await connection.query(query) as unknown as [BdData[]]
     const formatedData = rows.map((row) => ({
         ...row,
-        ratio: Number(Number(row.ratio).toFixed(2))
+        ratio: Number(row.ratio)
     }))
 
     if (formatedData.length === 10) {
         formatedData[9].process_name = "Otros"
         formatedData[9].pid = 0
-        formatedData[9].ratio = Number(Number(1 - formatedData.reduce((acc, row) => acc + row.ratio, 0)).toFixed(2))
+        formatedData[9].ratio =1 - formatedData.reduce((acc, row) => acc + row.ratio, 0)
     }
 
     return formatedData;

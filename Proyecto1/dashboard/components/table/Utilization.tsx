@@ -8,9 +8,11 @@ export const Utilization = () => {
     const [data, setData] = useState<{
         items: UtilizationInfo[],
         pages: number,
+        virtualMemory: number
     }>({
         items: [],
         pages: 1,
+        virtualMemory: 0
     });
     const intervalRef = useRef<NodeJS.Timeout>();
 
@@ -30,6 +32,10 @@ export const Utilization = () => {
     }, [page]);
 
   return (
+    <>
+    <h5 className="text-2xl font-bold text-center">
+      Total de memoria virtual: {(((Number(data.virtualMemory) || 0))/1024).toFixed(2)} MB
+    </h5>
     <Table
       aria-label="Example table with client side pagination"
       bottomContent={
@@ -67,5 +73,6 @@ export const Utilization = () => {
         )}
       </TableBody>
     </Table>
+    </>
   )
 }
